@@ -8,6 +8,7 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 fun main(args: Array<String>) {
@@ -20,7 +21,8 @@ fun main(args: Array<String>) {
         ShowLeaderboardCommand(),
         ListGamesCommand(),
         RemoveGameCommand(),
-        ResetGameCommand()
+        ResetGameCommand(),
+        QuestionCommand()
     )
 
     parser.parse(args)
@@ -105,5 +107,47 @@ class ResetGameCommand : BaseCommand("reset-game", "Reset the state of a game. P
     override fun execute() = runBlocking {
         val response: HttpResponse = client.post("http://localhost:8080/admin/games/$uuid/reset")
         println(response.bodyAsText())
+    }
+}
+
+@Serializable
+data class Alternative(
+    val id: Int,
+    val answer: String,
+    val correct: Boolean
+)
+
+@Serializable
+data class Question(
+    val questionNumber: Int,
+    val timeInSeconds: Int,
+    val alternatives: List<Alternative>
+)
+
+// Example:
+//  kanoot question 1373 1 30 '[{"id":1,"answer":"Answer 1","correct":true},{"id":2,"answer":"Answer 2","correct":false}]'
+class QuestionCommand : BaseCommand("question", "Add a question to a game") {
+    private val gameId by argument(ArgType.String, description = "Game ID")
+    private val questionNumber by argument(ArgType.Int, description = "Question number")
+    private val timeInSeconds by argument(ArgType.Int, description = "Time in seconds")
+    private val alternatives by argument(ArgType.String, description = "Alternatives in JSON format")
+
+    override fun execute() = runBlocking {
+        try {
+            val alternativesList = Json.decodeFromString<List<Alternative>>(alternatives)
+            val question = Question(
+                questionNumber = questionNumber,
+                timeInSeconds = timeInSeconds,
+                alternatives = alternativesList
+            )
+
+            val response: HttpResponse = client.post("http://localhost:8080/games/$gameId/question") {
+                contentType(ContentType.Application.Json)
+                setBody(question)
+            }
+            println("Question added: ${response.bodyAsText()}")
+        } catch (e: Exception) {
+            println("Failed to add question: ${e.message}")
+        }
     }
 }
